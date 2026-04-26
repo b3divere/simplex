@@ -1,115 +1,137 @@
 import numpy as np
-import matplotlib.pyplot as plt
+import json
 
-maximizar = np.array([2,1])
+with open("problema.json", "r") as f:
+    datos = json.load(f)
 
-restricciones = np.array([[2,1],
-                          [1,3],
-                          [1,0],
-                          [0,1]])
+maximizar     = np.array(datos["maximizar"], dtype=float)
+restricciones = np.array(datos["restricciones"], dtype=float)
+derecho       = np.array(datos["derecho"], dtype=float)
+tipos         = datos["tipos"]
 
-derecho = np.array([100,
-                    80,
-                    45,
-                    100])
-
-
-restricciones_grafico = [
-    "Destilación: 2x₁ + x₂ ≤ 100",
-    "Preparación: x₁ + 3x₂ ≤ 80",
-    "Demanda P1:  x₁ ≤ 45",
-    "Demanda P2:  x₂ ≤ 100",
-]
-
-def contruir_tabla(maximizar, restricciones, derecho):
-    
+def construir_tabla(maximizar, restricciones, derecho, tipos):
     n_vb = restricciones.shape[0]
     c_holguras = np.eye(n_vb)
-    res = derecho.reshape(-1,1)
-    
-    cuerpo = np.hstack([restricciones, c_holguras, res])
-    
-    fila_z = np.concatenate([-maximizar, np.zeros(n_vb), [0]])
-    
+    res = derecho.reshape(-1, 1)
+    n_artificiales = tipos.count(">=")
+    c_artificiales = np.zeros((n_vb, n_artificiales))
+
+    j = 0
+    for i in range(n_vb):
+        if tipos[i] == ">=":
+            c_holguras[i, i] = -1
+            c_artificiales[i, j] = 1
+            j += 1
+
+    cuerpo = np.hstack([restricciones, c_holguras, c_artificiales, res])
+    M = 1000
+    fila_z = np.concatenate([-maximizar, np.zeros(n_vb), [M]*n_artificiales, [0]])
     tabla = np.vstack([cuerpo, fila_z])
-    
-    return tabla
+
+    for i in range(n_vb):
+        if tipos[i] == ">=":
+            tabla[-1] = tabla[-1] - M * tabla[i]
+
+    return tabla, n_artificiales
 
 n_vars = len(maximizar)
 n_holguras = restricciones.shape[0]
+n_artificiales = tipos.count(">=")
 
-nombre = [f"x{i+1}" for i in range(n_vars)] + [f"h{i+1}" for i in range(n_holguras)]
+nombre = [f"x{i+1}" for i in range(n_vars)] + \
+         [f"h{i+1}" for i in range(n_holguras)] + \
+         [f"a{i+1}" for i in range(n_artificiales)]
 
-base = [f"h{i+1}" for i in range(n_holguras)]
+base = []
+j = 1
+for i, t in enumerate(tipos):
+    if t == "<=":
+        base.append(f"h{i+1}")
+    else:
+        base.append(f"a{j}")
+        j += 1
 
 def c_pivote(tabla):
-    fila_z = tabla[-1]
+    fila_z = tabla[-1, :-1]
     columna = np.argmin(fila_z)
-    
     return columna
 
 def f_fila(tabla, columna):
-    
     cocientes = []
-    
     for i in range(len(tabla)-1):
-        if tabla[i, columna] > 0:
+        if tabla[i, columna] > 1e-10:
             cociente = tabla[i, -1] / tabla[i, columna]
         else:
             cociente = np.inf
         cocientes.append(cociente)
-        
     return np.argmin(cocientes)
-    
+
 def pivotear(tabla, fila, columna, nombres, base):
     base[fila] = nombres[columna]
     tabla[fila] = tabla[fila] / tabla[fila, columna]
-    
     for i in range(len(tabla)):
         if i != fila:
-            factor = tabla[i,columna]
-            tabla[i] = tabla[i]-factor*tabla[fila]
-         
+            factor = tabla[i, columna]
+            tabla[i] = tabla[i] - factor * tabla[fila]
+
 def precio_sombra(tabla, n_vars):
     fila_z = tabla[-1]
     sombras = fila_z[n_vars:-1]
     return sombras
 
-def imprimir(tabla, base):
+def imprimir(tabla, base, nombre):
     print("\nTABLA SIMPLEX")
-    header = "Base\tx1\tx2\th1\th2\th3\th4\tRES"
+    header = "Base\t" + "\t".join(nombre) + "\tRES"
     print(header)
     print("-" * 70)
     for i, fila in enumerate(tabla[:-1]):
-        vals = "\t".join([f"{v:.2f}" for v in fila])
+        vals = "\t".join([f"{v:.4f}" for v in fila])
         print(f"{base[i]}\t{vals}")
-        
-    vals = "\t".join([f"{v:.2f}" for v in tabla[-1]])
+    vals = "\t".join([f"{v:.4f}" for v in tabla[-1]])
     print(f"Z\t{vals}")
     print("-" * 70)
 
-tabla = contruir_tabla(maximizar, restricciones, derecho)
-print("Estado incial")
-imprimir(tabla, base)
+tabla, n_art = construir_tabla(maximizar, restricciones, derecho, tipos)
+print("Estado inicial")
+imprimir(tabla, base, nombre)
 
 iteracion = 1
 
 while True:
-    if np.all(tabla[-1] >= 0):
+    if np.all(tabla[-1, :-1] >= -1e-6):
         break
-    
+
     columna = c_pivote(tabla)
     fila = f_fila(tabla, columna)
-    pivotear(tabla, fila, columna, base, nombre)
-    
-    print(f"Iteracccion {iteracion}: ")
-    imprimir(tabla, base)
+
+    cocientes = []
+    for i in range(len(tabla)-1):
+        if tabla[i, columna] > 1e-10:
+            cocientes.append(tabla[i, -1] / tabla[i, columna])
+        else:
+            cocientes.append(np.inf)
+    if all(c == np.inf for c in cocientes):
+        print("Problema no acotado")
+        exit()
+
+    pivotear(tabla, fila, columna, nombre, base)
+
+    print(f"Iteración {iteracion}:")
+    imprimir(tabla, base, nombre)
     iteracion += 1
 
-print("Solucion optima encontrada")
-print(f"Z = {tabla[-1, -1]}")
+infactible = False
+for i, b in enumerate(base):
+    if "a" in b and tabla[i, -1] > 1e-6:
+        infactible = True
+        break
 
-sombras = precio_sombra(tabla, len(maximizar))
-print("\nPrecios Sombra:")
-for i, s in enumerate(sombras):
-    print(f"Restricción {i+1}: {s:.2f}")
+if infactible:
+    print("Problema infactible: no existe solución factible")
+else:
+    print("Solución óptima encontrada")
+    print(f"Z = {tabla[-1, -1]:.6f}")
+    sombras = precio_sombra(tabla, n_vars)
+    print("\nPrecios Sombra:")
+    for i, s in enumerate(sombras):
+        print(f"  Restricción {i+1}: {s:.4f}")
