@@ -33,21 +33,19 @@ xs, ys = zip(*res["vertices"])
 x_max_data = max(xs)
 y_max_data = max(ys)
 
-margen_pct     = g["autoajuste_margen_pct"]
-offset_pct     = g["autoajuste_offset_pct"]
-offset_escala  = g["autoajuste_offset_escala"]
-clip_factor    = g["autoajuste_clip_factor"]
+margen_pct    = g["autoajuste_margen_pct"]
+offset_pct    = g["autoajuste_offset_pct"]
+offset_escala = g["autoajuste_offset_escala"]
+clip_factor   = g["autoajuste_clip_factor"]
 
 x_plot_max = x_max_data * (1 + margen_pct) + g["xlim_margen"]
 y_plot_max = y_max_data * (1 + margen_pct) + g["ylim_margen"]
 
-# Offsets de texto escalados al rango de datos
 ox = x_max_data * offset_pct + g["vertices_text_offset"][0] * (x_max_data / offset_escala)
 oy = y_max_data * offset_pct + g["vertices_text_offset"][1] * (y_max_data / offset_escala)
 tx = x_max_data * offset_pct + g["optimo_text_offset"][0] * (x_max_data / offset_escala)
 ty = y_max_data * offset_pct + g["optimo_text_offset"][1] * (y_max_data / offset_escala)
 
-# x_vals cubre todo el rango visible
 x_vals = np.linspace(0, x_plot_max, g["x_vals_n"])
 
 # GRÁFICO
@@ -57,9 +55,13 @@ fig, (ax_plot, ax_legend) = plt.subplots(
     gridspec_kw={"width_ratios": g["width_ratios"]}
 )
 
-# Restricciones
+# ── Restricciones ──
 colores_lineas = []
-for i, (a1, a2, b) in enumerate(restricciones):
+modo = l.get("modo", "max")
+signo_default = "<=" if modo == "max" else ">="
+
+for i, r in enumerate(restricciones):
+    a1, a2, b = r[0], r[1], r[2]
     if a2 != 0:
         y_line = (b - a1 * x_vals) / a2
         mask = (y_line >= -g["ylim_margen"]) & (y_line <= y_plot_max * clip_factor)
@@ -81,7 +83,7 @@ for v in res["vertices"]:
                  round(v[1], dec_cmp) == round(res["optimo"][1], dec_cmp))
     if not es_optimo:
         ax_plot.scatter(*v, color=g["vertices_color"], s=g["vertices_size"], zorder=5)
-        z_v    = res["z_vertices"][v]
+        z_v     = res["z_vertices"][v]
         activas = res["activas_vertices"][v]
         etiqueta = f'({round(v[0], dec)}, {round(v[1], dec)})'
         if g["vertices_mostrar_z"]:
@@ -103,8 +105,8 @@ ax_plot.text(res["optimo"][0] + tx, res["optimo"][1] + ty, etiqueta_opt,
 
 # Línea de nivel óptimo
 if c[1] != 0:
-    y_nivel     = (z - c[0] * x_vals) / c[1]
-    mask_nivel  = (y_nivel >= -g["ylim_margen"]) & (y_nivel <= y_plot_max * clip_factor)
+    y_nivel    = (z - c[0] * x_vals) / c[1]
+    mask_nivel = (y_nivel >= -g["ylim_margen"]) & (y_nivel <= y_plot_max * clip_factor)
     ax_plot.plot(x_vals[mask_nivel], y_nivel[mask_nivel], g["nivel_color"],
                  linewidth=g["nivel_linewidth"])
 
@@ -122,12 +124,19 @@ ax_plot.set_title(g["titulo"])
 ax_legend.axis("off")
 
 handles = []
-for i, (a1, a2, b) in enumerate(restricciones):
-    lbl = f'R{i+1}: {a1}x1 + {a2}x2 ≤ {b}' if a2 != 0 else f'R{i+1}: x1 ≤ {b/a1}'
+for i, r in enumerate(restricciones):
+    a1, a2, b = r[0], r[1], r[2]
+    signo = r[3] if len(r) > 3 else signo_default   # ← signo correcto en etiqueta
+    if a2 != 0:
+        lbl = f'R{i+1}: {a1}x1 + {a2}x2 {signo} {b}'
+    else:
+        lbl = f'R{i+1}: x1 {signo} {b/a1}'
     handles.append(mlines.Line2D([], [], color=colores_lineas[i], label=lbl))
 
-handles.append(mpatches.Patch(color=g["region_color"], alpha=g["region_alpha"], label=g["region_label"]))
-handles.append(mlines.Line2D([], [], marker='o', color='w', markerfacecolor=g["optimo_color"],
+handles.append(mpatches.Patch(color=g["region_color"], alpha=g["region_alpha"],
+                               label=g["region_label"]))
+handles.append(mlines.Line2D([], [], marker='o', color='w',
+                              markerfacecolor=g["optimo_color"],
                               markersize=g["leyenda_markersize"], label='Óptimo'))
 handles.append(mlines.Line2D([], [], color=g["nivel_color"].replace('-', ''),
                               linestyle='--', linewidth=g["nivel_linewidth"],
@@ -141,17 +150,20 @@ leg.get_frame().set_facecolor(g["resumen_color_fondo"])
 leg.get_frame().set_edgecolor(g["resumen_color_borde"])
 
 if g["resumen_mostrar"]:
-    modo_str = "Min" if l.get("modo", "max") == "min" else "Max"
-    expr_c = " + ".join(f'{ci}·x{i+1}' for i, ci in enumerate(c))
-    texto  = (f'Función objetivo:\n  {modo_str} Z = {expr_c}\n\n'
-              f'Solución óptima:\n'
-              + "\n".join(f'  x{i+1} = {round(res["optimo"][i], l["decimales_dedup"])}' for i in range(len(c)))
-              + f'\n  Z* = {res["valor_optimo"]:.{dec}f}\n\n'
-              + (f'Restricciones activas:\n  R{", R".join(map(str, activas_opt))}\n\n' if activas_opt else '')
-              + f'Vértices evaluados: {len(res["vertices"])}')
+    modo_str = "Min" if modo == "min" else "Max"
+    expr_c   = " + ".join(f'{ci}·x{i+1}' for i, ci in enumerate(c))
+    texto    = (f'Función objetivo:\n  {modo_str} Z = {expr_c}\n\n'
+                f'Solución óptima:\n'
+                + "\n".join(f'  x{i+1} = {round(res["optimo"][i], l["decimales_dedup"])}'
+                             for i in range(len(c)))
+                + f'\n  Z* = {res["valor_optimo"]:.{dec}f}\n\n'
+                + (f'Restricciones activas:\n  R{", R".join(map(str, activas_opt))}\n\n'
+                   if activas_opt else '')
+                + f'Vértices evaluados: {len(res["vertices"])}')
     ax_legend.text(g["resumen_posicion"][0], g["resumen_posicion"][1], texto,
                    transform=ax_legend.transAxes,
-                   fontsize=g["resumen_fontsize"], verticalalignment='top', horizontalalignment='center',
+                   fontsize=g["resumen_fontsize"], verticalalignment='top',
+                   horizontalalignment='center',
                    bbox=dict(boxstyle='round', facecolor=g["resumen_color_fondo"],
                              edgecolor=g["resumen_color_borde"], alpha=g["resumen_alpha"]))
 
