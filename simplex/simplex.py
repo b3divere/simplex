@@ -1,7 +1,11 @@
 import numpy as np
 import json
+import os
 
-with open("problema.json", "r") as f:
+
+ruta = os.path.join(os.path.dirname(__file__), "problema.json")
+
+with open(ruta, "r") as f:
     datos = json.load(f)
 
 maximizar     = np.array(datos["maximizar"], dtype=float)
