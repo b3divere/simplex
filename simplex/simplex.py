@@ -14,6 +14,15 @@ derecho       = np.array(datos["derecho"], dtype=float)
 tipos         = datos["tipos"]
 M             = datos["M"]
 
+for i in range(len(derecho)):
+    if derecho[i] < 0:
+        derecho[i]       = -derecho[i]
+        restricciones[i] = -restricciones[i]
+        if tipos[i] == "<=":
+            tipos[i] = ">="
+        else:
+            tipos[i] = "<="
+
 def construir_tabla(maximizar, restricciones, derecho, tipos, M):
     n_vb = restricciones.shape[0]
     c_holguras = np.eye(n_vb)
@@ -41,6 +50,7 @@ def construir_tabla(maximizar, restricciones, derecho, tipos, M):
 n_vars         = len(maximizar)
 n_holguras     = restricciones.shape[0]
 n_artificiales = tipos.count(">=")
+n_reales = n_vars + n_holguras
 
 nombre = [f"x{i+1}" for i in range(n_vars)] + \
          [f"h{i+1}" for i in range(n_holguras)] + \
@@ -55,9 +65,11 @@ for i, t in enumerate(tipos):
         base.append(f"a{contador_art}")
         contador_art += 1
 
-def c_pivote(tabla):
-    fila_z = tabla[-1, :-1]
-    return np.argmin(fila_z)
+def c_pivote(tabla, n_reales):
+    fila_z_reales = tabla[-1, :n_reales]
+    if np.all(fila_z_reales >= -1e-6):
+        return None
+    return np.argmin(fila_z_reales)
 
 def f_fila(tabla, columna):
     cocientes = []
@@ -114,7 +126,9 @@ while True:
     if np.all(tabla[-1, :-1] >= -1e-6):
         break
 
-    columna = c_pivote(tabla)
+    columna = c_pivote(tabla, n_reales)
+    if columna is None:
+        break
 
     cocientes = []
     for i in range(len(tabla)-1):
