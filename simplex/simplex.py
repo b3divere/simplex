@@ -23,7 +23,7 @@ for i in range(len(derecho)):
 
 n_vars         = len(maximizar)
 n_holguras     = restricciones.shape[0]
-n_artificiales = tipos.count(">=")
+n_artificiales = tipos.count(">=") + tipos.count("=")
 n_reales       = n_vars + n_holguras
 
 nombre = [f"x{i+1}" for i in range(n_vars)] + \
@@ -67,7 +67,7 @@ def construir_tabla_fase1(restricciones, derecho, tipos):
     tabla = np.vstack([cuerpo, fila_w])
 
     for i in range(n_vb):
-        if tipos[i] == ">=":
+        if tipos[i] == ">=" or tipos[i] == "=":
             tabla[-1] = tabla[-1] - tabla[i]
 
     return tabla
