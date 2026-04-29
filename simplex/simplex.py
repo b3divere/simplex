@@ -35,7 +35,7 @@ contador_art = 1
 for i, t in enumerate(tipos):
     if t == "<=":
         base.append(f"h{i+1}")
-    else:
+    elif t in (">=", "="):
         base.append(f"a{contador_art}")
         contador_art += 1
 
@@ -46,13 +46,17 @@ def construir_tabla_fase1(restricciones, derecho, tipos):
     n_vb           = restricciones.shape[0]
     c_holguras     = np.eye(n_vb)
     res            = derecho.reshape(-1, 1)
-    n_art          = tipos.count(">=")
+    n_art          = tipos.count(">=") + tipos.count("=")
     c_artificiales = np.zeros((n_vb, n_art))
 
     contador_art = 0
     for i in range(n_vb):
         if tipos[i] == ">=":
             c_holguras[i, i]            = -1
+            c_artificiales[i, contador_art] = 1
+            contador_art += 1
+        elif tipos[i] == "=":
+            c_holguras[i, i]            = 0
             c_artificiales[i, contador_art] = 1
             contador_art += 1
 
