@@ -1,123 +1,201 @@
 import numpy as np
 
-def interseccion(r1, r2):
-    A = np.array([[r1[0], r1[1]], [r2[0], r2[1]]])
-    B = np.array([r1[2], r2[2]])
+
+def interseccion(restriccion1, restriccion2):
+    matriz_coeficientes = np.array([
+        [restriccion1[0], restriccion1[1]],
+        [restriccion2[0], restriccion2[1]]
+    ])
+
+    vector_resultados = np.array([
+        restriccion1[2],
+        restriccion2[2]
+    ])
+
     try:
-        return np.linalg.solve(A, B)
+        return np.linalg.solve(matriz_coeficientes, vector_resultados)
     except np.linalg.LinAlgError:
         return None
 
-def signo_por_defecto(modo):
-    return ">=" if modo == "min" else "<="
 
-def normalizar_restricciones(restricciones, modo):
-    default = signo_por_defecto(modo)
-    normalizadas = []
-    for r in restricciones:
-        a1, a2, b = r[0], r[1], r[2]
-        signo = r[3] if len(r) > 3 else default
-        # "=" se expande en dos restricciones: <= y >=
+def signo_por_defecto(tipo_optimizacion):
+    return ">=" if tipo_optimizacion == "min" else "<="
+
+
+def normalizar_restricciones(restricciones_originales, tipo_optimizacion):
+    signo_default = signo_por_defecto(tipo_optimizacion)
+    restricciones_normalizadas = []
+
+    for restriccion in restricciones_originales:
+        coef_x1 = restriccion[0]
+        coef_x2 = restriccion[1]
+        termino_independiente = restriccion[2]
+
+        signo = restriccion[3] if len(restriccion) > 3 else signo_default
+
         if signo == "=":
-            normalizadas.append((a1, a2, b, "<="))
-            normalizadas.append((a1, a2, b, ">="))
+            restricciones_normalizadas.append(
+                (coef_x1, coef_x2, termino_independiente, "<=")
+            )
+            restricciones_normalizadas.append(
+                (coef_x1, coef_x2, termino_independiente, ">=")
+            )
         else:
-            normalizadas.append((a1, a2, b, signo))
-    return normalizadas
+            restricciones_normalizadas.append(
+                (coef_x1, coef_x2, termino_independiente, signo)
+            )
 
-def es_factible(p, restricciones, tolerancia):
-    x1, x2 = p
+    return restricciones_normalizadas
+
+
+def es_factible(punto, restricciones, tolerancia):
+    x1, x2 = punto
+
     if x1 < -tolerancia or x2 < -tolerancia:
         return False
-    for (a1, a2, b, signo) in restricciones:
-        val = a1 * x1 + a2 * x2
-        if signo == ">=" and val < b - tolerancia:
+
+    for coef_x1, coef_x2, termino_independiente, signo in restricciones:
+        valor_restriccion = coef_x1 * x1 + coef_x2 * x2
+
+        if signo == ">=" and valor_restriccion < termino_independiente - tolerancia:
             return False
-        if signo == "<=" and val > b + tolerancia:
+
+        if signo == "<=" and valor_restriccion > termino_independiente + tolerancia:
             return False
+
     return True
 
-def restricciones_activas(p, restricciones, tolerancia_activa):
-    x1, x2 = p
-    activas = []
-    vistos = set()
-    for i, (a1, a2, b, _) in enumerate(restricciones):
-        if abs(a1 * x1 + a2 * x2 - b) <= tolerancia_activa:
-            # Evitar duplicados por restricciones "=" expandidas
-            clave = (a1, a2, b)
-            if clave not in vistos:
-                activas.append(i + 1)
-                vistos.add(clave)
-    return activas
 
-def convex_hull(puntos):
-    puntos = list(set(puntos))
-    if len(puntos) <= 1:
-        return puntos
-    cx, cy = np.mean(puntos, axis=0)
-    return sorted(puntos, key=lambda p: np.arctan2(p[1] - cy, p[0] - cx))
+def restricciones_activas(punto, restricciones, tolerancia_activa):
+    x1, x2 = punto
+    restricciones_cumplidas = []
+    restricciones_vistas = set()
 
-def resolver_PL(c, restricciones_raw, l):
-    tolerancia        = l["tolerancia"]
-    tolerancia_activa = l["tolerancia_activa"]
-    margen            = l["margen"]
-    decimales_dedup   = l["decimales_dedup"]
-    modo              = l.get("modo", "max")
+    for indice, (coef_x1, coef_x2, termino_independiente, _) in enumerate(restricciones):
+        diferencia = abs(coef_x1 * x1 + coef_x2 * x2 - termino_independiente)
 
-    # ── Normalizar restricciones automáticamente según modo ──
-    restricciones = normalizar_restricciones(restricciones_raw, modo)
+        if diferencia <= tolerancia_activa:
+            clave_restriccion = (coef_x1, coef_x2, termino_independiente)
 
-    # ── Generar vértices candidatos ──
+            if clave_restriccion not in restricciones_vistas:
+                restricciones_cumplidas.append(indice + 1)
+                restricciones_vistas.add(clave_restriccion)
+
+    return restricciones_cumplidas
+
+
+def convex_hull(lista_puntos):
+    lista_puntos = list(set(lista_puntos))
+
+    if len(lista_puntos) <= 1:
+        return lista_puntos
+
+    centro_x, centro_y = np.mean(lista_puntos, axis=0)
+
+    return sorted(
+        lista_puntos,
+        key=lambda punto: np.arctan2(
+            punto[1] - centro_y,
+            punto[0] - centro_x
+        )
+    )
+
+
+def resolver_PL(coeficientes_objetivo, restricciones_originales, configuracion):
+    tolerancia = configuracion["tolerancia"]
+    tolerancia_activa = configuracion["tolerancia_activa"]
+    margen = configuracion["margen"]
+    decimales = configuracion["decimales_dedup"]
+
+    tipo_optimizacion = configuracion.get("modo", "max")
+
+    restricciones = normalizar_restricciones(
+        restricciones_originales,
+        tipo_optimizacion
+    )
+
     vertices = []
-    n = len(restricciones)
+    total_restricciones = len(restricciones)
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            p = interseccion(restricciones[i], restricciones[j])
-            if p is not None:
-                vertices.append(tuple(p))
+    for i in range(total_restricciones):
+        for j in range(i + 1, total_restricciones):
+            punto_interseccion = interseccion(
+                restricciones[i],
+                restricciones[j]
+            )
 
-    for (a1, a2, b, _) in restricciones:
-        if a2 != 0:
-            vertices.append((0, b / a2))
-        if a1 != 0:
-            vertices.append((b / a1, 0))
+            if punto_interseccion is not None:
+                vertices.append(tuple(punto_interseccion))
+
+    for coef_x1, coef_x2, termino_independiente, _ in restricciones:
+        if coef_x2 != 0:
+            vertices.append((0, termino_independiente / coef_x2))
+
+        if coef_x1 != 0:
+            vertices.append((termino_independiente / coef_x1, 0))
 
     vertices.append((0, 0))
 
-    # ── Filtrar factibles ──
-    vertices = [v for v in vertices if es_factible(v, restricciones, tolerancia)]
+    vertices = [
+        punto for punto in vertices
+        if es_factible(punto, restricciones, tolerancia)
+    ]
 
     vertices_unicos = list({
-        (round(v[0], decimales_dedup), round(v[1], decimales_dedup))
-        for v in vertices
+        (
+            round(punto[0], decimales),
+            round(punto[1], decimales)
+        )
+        for punto in vertices
     })
 
     if not vertices_unicos:
-        raise ValueError("No se encontraron vértices factibles. "
-                         "Verifica las restricciones o el modo.")
+        raise ValueError("No se encontraron vértices factibles.")
 
     vertices_ordenados = convex_hull(vertices_unicos)
 
-    # ── Óptimo según modo ──
-    if modo == "min":
-        optimo = min(vertices_unicos, key=lambda p: np.dot(c, p))
+    if tipo_optimizacion == "min":
+        punto_optimo = min(
+            vertices_unicos,
+            key=lambda punto: np.dot(coeficientes_objetivo, punto)
+        )
     else:
-        optimo = max(vertices_unicos, key=lambda p: np.dot(c, p))
+        punto_optimo = max(
+            vertices_unicos,
+            key=lambda punto: np.dot(coeficientes_objetivo, punto)
+        )
 
-    z_vertices       = {v: round(float(np.dot(c, v)), decimales_dedup) for v in vertices_unicos}
-    activas_vertices = {v: restricciones_activas(v, restricciones, tolerancia_activa)
-                        for v in vertices_unicos}
+    z_vertices = {
+        punto: round(
+            float(np.dot(coeficientes_objetivo, punto)),
+            decimales
+        )
+        for punto in vertices_unicos
+    }
 
-    xs, ys = zip(*vertices_unicos)
+    activas_vertices = {
+        punto: restricciones_activas(
+            punto,
+            restricciones,
+            tolerancia_activa
+        )
+        for punto in vertices_unicos
+    }
+
+    coordenadas_x, coordenadas_y = zip(*vertices_unicos)
+
+    x_max = max(coordenadas_x) + margen
+    y_max = max(coordenadas_y) + margen
 
     return {
-        "vertices":           vertices_unicos,
+        "vertices": vertices_unicos,
         "vertices_ordenados": vertices_ordenados,
-        "z_vertices":         z_vertices,
-        "activas_vertices":   activas_vertices,
-        "optimo":             optimo,
-        "valor_optimo":       float(np.dot(c, optimo)),
-        "x_max":              max(xs) + margen,
-        "y_max":              max(ys) + margen
+        "z_vertices": z_vertices,
+        "activas_vertices": activas_vertices,
+        "optimo": punto_optimo,
+        "valor_optimo": float(
+            np.dot(coeficientes_objetivo, punto_optimo)
+        ),
+        "x_max": x_max,
+        "y_max": y_max
     }
