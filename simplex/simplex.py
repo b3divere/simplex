@@ -18,8 +18,10 @@ for i in range(len(derecho)):
         restricciones[i] = -restricciones[i]
         if tipos[i] == "<=":
             tipos[i] = ">="
-        else:
+        elif tipos[i] == ">=":
             tipos[i] = "<="
+        elif tipos[i] == "=":
+            tipos[i] = "="
 
 n_vars         = len(maximizar)
 n_holguras     = restricciones.shape[0]
@@ -77,22 +79,34 @@ def construir_tabla_fase1(restricciones, derecho, tipos):
 # y eliminar columnas artificiales
 # ─────────────────────────────────────────────
 def construir_tabla_fase2(tabla, maximizar, base, nombre, n_vars, n_holguras):
-    n_art = tabla.shape[1] - 1 - n_vars - n_holguras
+    nombre2 = nombre[:n_vars + n_holguras]
 
     cols_reales = list(range(n_vars + n_holguras)) + [tabla.shape[1] - 1]
-    tabla2      = tabla[:, cols_reales]
+    tabla2 = tabla[:, cols_reales]
+
+    filas_conservar = []
+    base2 = []
+
+    for i, var in enumerate(base):
+        if not var.startswith("a"):
+            filas_conservar.append(i)
+            base2.append(var)
+
+    filas_conservar.append(tabla2.shape[0] - 1)
+    tabla2 = tabla2[filas_conservar, :]
 
     fila_z = np.concatenate([-maximizar, np.zeros(n_holguras), [0]])
     tabla2[-1] = fila_z
 
-    nombre2 = nombre[:n_vars + n_holguras]
-    for i, var in enumerate(base):
+    for i, var in enumerate(base2):
         if var in nombre2:
             col = nombre2.index(var)
-            if abs(tabla2[-1, col]) > 1e-10:
-                tabla2[-1] = tabla2[-1] - tabla2[-1, col] * tabla2[i]
+            coef = tabla2[-1, col]
 
-    return tabla2
+            if abs(coef) > 1e-10:
+                tabla2[-1] = tabla2[-1] - coef * tabla2[i]
+
+    return tabla2, base2
 
 def c_pivote(tabla, n_cols):
     fila_z = tabla[-1, :n_cols]
@@ -199,8 +213,7 @@ else:
     tabla = construir_tabla_fase1(restricciones, derecho, tipos)
     print("Estado inicial Fase 1")
     imprimir(tabla, base, nombre)
-    loop_simplex(tabla, base, nombre, n_reales, "Fase 1")
-
+    loop_simplex(tabla, base, nombre, tabla.shape[1] - 1, "Fase 1")
     w_final = tabla[-1, -1]
     if abs(w_final) > 1e-6:
         print("Problema infactible: W no llegó a 0")
@@ -218,8 +231,7 @@ else:
     print("=" * 50)
 
     nombre2 = nombre[:n_vars + n_holguras]
-    tabla2  = construir_tabla_fase2(tabla, maximizar, base, nombre, n_vars, n_holguras)
-
+    tabla2, base2 = construir_tabla_fase2(tabla, maximizar, base, nombre, n_vars, n_holguras)
     print("Estado inicial Fase 2")
     imprimir(tabla2, base, nombre2)
     loop_simplex(tabla2, base, nombre2, n_reales, "Fase 2")
